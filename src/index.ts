@@ -1,6 +1,8 @@
 import express from "express";
 const app = express();
 
+const capprice=1050;
+
 app.use(express.json());
 interface INR_BALANCES {
   [key: string]: {
@@ -29,66 +31,67 @@ interface ORDERBOOK {
 }
 
 let INR_BALANCES: INR_BALANCES = {
-  user1: {
-    balance: 10,
-    locked: 0,
-  },
-  user2: {
-    balance: 20,
-    locked: 10,
-  },
+//   user1: {
+//     balance: 10,
+//     locked: 0,
+//   },
+//   user2: {
+//     balance: 20,
+//     locked: 10,
+//   },
 };
 
 let ORDERBOOK: any = {
-  BTC_USDT_10_Oct_2024_9_30: {
-    yes: {
-      "9.5": {
-        total: 12,
-        orders: {
-          user1: 10,
-          user2: 2,
-        },
-      },
-      "8.5": {
-        total: 12,
-        orders: {
-          user1: 3,
-          user2: 6,
-          user3: 3,
-        },
-      },
-    },
-    no: {
-      "7.5": {
-        total: 12,
-        orders: {
-          user1: 3,
-          user2: 2,
-          user3: 7,
-        },
-      },
-    },
-  },
+//   BTC_USDT_10_Oct_2024_9_30: {
+//     yes: {
+//       "9.5": {
+//         total: 12,
+//         orders: {
+//           user1: 10,
+//           user2: 2,
+//         },
+//       },
+//       "8.5": {
+//         total: 12,
+//         orders: {
+//           user1: 3,
+//           user2: 6,
+//           user3: 3,
+//         },
+//       },
+//     },
+//     no: {
+//       "7.5": {
+//         total: 12,
+//         orders: {
+//           user1: 3,
+//           user2: 2,
+//           user3: 7,
+//         },
+//       },
+//     },
+//   },
 };
 
 let STOCK_BALANCES: any = {
-  user1: {
-    BTC_USDT_10_Oct_2024_9_30: {
-      yes: {
-        quantity: 1,
-        locked: 0,
-      },
-    },
-  },
-  user2: {
-    BTC_USDT_10_Oct_2024_9_30: {
-      no: {
-        quantity: 3,
-        locked: 4,
-      },
-    },
-  },
+//   user1: {
+//     BTC_USDT_10_Oct_2024_9_30: {
+//       yes: {
+//         quantity: 1,
+//         locked: 0,
+//       },
+//     },
+//   },
+//   user2: {
+//     BTC_USDT_10_Oct_2024_9_30: {
+//       no: {
+//         quantity: 3,
+//         locked: 4,
+//       },
+//     },
+//   },
 };
+
 let pendingState = [];
 
 app.post("/reset", async (req: any, res: any) => {
@@ -209,7 +212,7 @@ app.get("/balance/inr/:userId", (req: any, res: any) => {
 app.post("/onramp/inr", async (req: any, res: any) => {
   try {
     const body = await req.body;
-    console.log(body);
+    
     if (!INR_BALANCES[body.userId]) {
       return res.status(400).json({
         message: "user not found",
@@ -299,13 +302,14 @@ app.post("/order/buy", (req: any, res: any) => {
   }
 
   // If no match is found, create a pseudo sell order
-  const pseudoUserId = `pseudo_${userId}`;
-  if (!sellSide[price]) {
-    sellSide[price] = { total: 0, orders: {} };
+  let newprice= capprice-price
+  const pseudoUserId = `${userId}`;
+  if (!sellSide[newprice]) {
+    sellSide[newprice] = { total: 0, orders: {} };
   }
-  sellSide[price].orders[pseudoUserId] =
-    (sellSide[price].orders[pseudoUserId] || 0) + quantity;
-  sellSide[price].total += quantity;
+  sellSide[newprice].orders[pseudoUserId] =
+    (sellSide[newprice].orders[pseudoUserId] || 0) + quantity;
+  sellSide[newprice].total += quantity;
 
   return res.status(201).json({
     message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
@@ -325,7 +329,7 @@ function matchOrders(
 
   // Check if there are sell orders at the same or lower price
   for (const sellPrice in sellSide) {
-    if (parseFloat(sellPrice) <= price) {
+    if (parseInt(sellPrice) <= price) {
       const availableOrders = sellSide[sellPrice];
 
       // Calculate the matched quantity
@@ -346,7 +350,7 @@ function matchOrders(
       // Deduct the matched quantity from the sell orders
       availableOrders.total -= matchedQuantity;
       for (const sellerId in availableOrders.orders) {
-        const sellerQuantity = availableOrders.orders[sellerId];
+        const sellerQuantity = availableOrders.orders[sellerId] 
         const toDeduct = Math.min(sellerQuantity, matchedQuantity);
 
         STOCK_BALANCES[sellerId][stockSymbol][
@@ -413,7 +417,12 @@ app.post("/order/sell", (req: any, res: any) => {
   side[price].total += quantity;
 
   // Attempt to finalize any pseudo orders
-  finalizeOrder(stockSymbol, price, quantity, userId, type);
+  if(type==="yes"){
+    finalizeOrder(stockSymbol, price, quantity, userId, "no");
+  }
+  else{
+    finalizeOrder(stockSymbol, price, quantity, userId, "yes");
+  }
 
   return res.status(201).json({
     message: `Sell order placed for ${quantity} ${type} at price ${price}`,
@@ -490,9 +499,9 @@ function finalizeOrder(
   return false;
 }
 
-app.post("/trade/mint", (req, res) => {
-  const { stockSymbol, quantity } = req.body;
-});
+// app.post("/trade/mint", (req, res) => {
+//   const { stockSymbol, quantity } = req.body;
+// });
 
 app.listen(4001, () => {
   console.log("server is running on port 4001");
