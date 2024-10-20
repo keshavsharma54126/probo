@@ -1,7 +1,7 @@
 import express from "express";
 const app = express();
 
-const capprice=1050;
+const capprice=1000;
 
 app.use(express.json());
 interface INR_BALANCES {
@@ -266,7 +266,7 @@ app.get("/orderbook/:stockSymbol", (req: any, res: any) => {
 });
 app.post("/order/buy", (req: any, res: any) => {
   const { userId, stockSymbol, quantity, price, type } = req.body;
-
+//check if the user exists in the inr balances
   if (!INR_BALANCES[userId]) {
     return res.status(400).json({ message: "User not found" });
   }
@@ -276,6 +276,7 @@ app.post("/order/buy", (req: any, res: any) => {
       .status(400)
       .json({ message: `Market for ${stockSymbol} does not exist` });
   }
+  //check if the user has enough balance to buy the stock
   const totalCost = quantity * price;
   if (INR_BALANCES[userId].balance < totalCost) {
     return res.status(400).json({ message: "Insufficient balance" });
@@ -284,11 +285,7 @@ app.post("/order/buy", (req: any, res: any) => {
   INR_BALANCES[userId].balance -= totalCost;
   INR_BALANCES[userId].locked += totalCost;
 
-  // Determine the sides of the order book
-  const buySide =
-    type === "yes" ? ORDERBOOK[stockSymbol].yes : ORDERBOOK[stockSymbol].no;
-  const sellSide =
-    type === "yes" ? ORDERBOOK[stockSymbol].no : ORDERBOOK[stockSymbol].yes;
+
 
   // Try to match with existing sell orders
   const matched = matchOrders(userId, stockSymbol, quantity, price, type);
@@ -300,16 +297,22 @@ app.post("/order/buy", (req: any, res: any) => {
       INR_BALANCES,
     });
   }
+    // Determine the sides of the order book
+    const sellSide =
+    type === "yes" ? ORDERBOOK[stockSymbol].no : ORDERBOOK[stockSymbol].yes;
 
   // If no match is found, create a pseudo sell order
   let newprice= capprice-price
-  const pseudoUserId = `${userId}`;
+  const pseudoUserId = `pseudo${userId}`;
   if (!sellSide[newprice]) {
     sellSide[newprice] = { total: 0, orders: {} };
   }
   sellSide[newprice].orders[pseudoUserId] =
     (sellSide[newprice].orders[pseudoUserId] || 0) + quantity;
   sellSide[newprice].total += quantity;
+  //sort the order book after adding the new order
+  let newOrderSide = type==="yes"?"no":"yes"
+  sortOrderBook(stockSymbol,newOrderSide)
 
   return res.status(201).json({
     message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
@@ -324,6 +327,12 @@ function matchOrders(
   price: number,
   type: string
 ) {
+  // Check if the stockSymbol exists in the ORDERBOOK
+  if (!ORDERBOOK[stockSymbol]) {
+    console.error(`Stock symbol ${stockSymbol} not found in ORDERBOOK`);
+    return false;
+  }
+
   const sellSide =
     type === "yes" ? ORDERBOOK[stockSymbol].yes : ORDERBOOK[stockSymbol].no;
 
@@ -337,25 +346,31 @@ function matchOrders(
       const remainingQuantity = quantity - matchedQuantity;
 
       // Update the matched user's stock balances and release the funds
-      STOCK_BALANCES[userId] = STOCK_BALANCES[userId] || {};
-      STOCK_BALANCES[userId][stockSymbol] = STOCK_BALANCES[userId][
-        stockSymbol
-      ] || {
-        yes: { quantity: 0, locked: 0 },
-        no: { quantity: 0, locked: 0 },
-      };
+      if (!STOCK_BALANCES[userId]) {
+        STOCK_BALANCES[userId] = {};
+      }
+      if (!STOCK_BALANCES[userId][stockSymbol]) {
+        STOCK_BALANCES[userId][stockSymbol] = {
+          yes: { quantity: 0, locked: 0 },
+          no: { quantity: 0, locked: 0 },
+        };
+      }
       STOCK_BALANCES[userId][stockSymbol][type].quantity += matchedQuantity;
-      INR_BALANCES[userId].locked -= matchedQuantity * price;
+      
+      //relaease the locked funds
+      INR_BALANCES[userId].locked -= matchedQuantity * parseInt(sellPrice);
 
       // Deduct the matched quantity from the sell orders
       availableOrders.total -= matchedQuantity;
       for (const sellerId in availableOrders.orders) {
-        const sellerQuantity = availableOrders.orders[sellerId] 
+        const sellerQuantity = availableOrders.orders[sellerId];
         const toDeduct = Math.min(sellerQuantity, matchedQuantity);
 
-        STOCK_BALANCES[sellerId][stockSymbol][
-          type === "yes" ? "no" : "yes"
-        ].quantity -= toDeduct;
+        STOCK_BALANCES[sellerId][stockSymbol][type].locked -= toDeduct;
+        
+        if (!INR_BALANCES[sellerId]) {
+          INR_BALANCES[sellerId] = { balance: 0, locked: 0 };
+        }
         INR_BALANCES[sellerId].balance += toDeduct * price;
         matchedQuantity -= toDeduct;
 
@@ -401,27 +416,20 @@ app.post("/order/sell", (req: any, res: any) => {
   userStock.quantity -= quantity;
   userStock.locked += quantity;
 
-  // Add to order book
   if (!ORDERBOOK[stockSymbol]) {
     return res
       .status(400)
       .json({ message: `Market for ${stockSymbol} does not exist` });
   }
-  const side =
-    type === "yes" ? ORDERBOOK[stockSymbol].yes : ORDERBOOK[stockSymbol].no;
 
-  if (!side[price]) {
-    side[price] = { total: 0, orders: {} };
-  }
-  side[price].orders[userId] = (side[price].orders[userId] || 0) + quantity;
-  side[price].total += quantity;
-
-  // Attempt to finalize any pseudo orders
-  if(type==="yes"){
-    finalizeOrder(stockSymbol, price, quantity, userId, "no");
-  }
-  else{
-    finalizeOrder(stockSymbol, price, quantity, userId, "yes");
+  const matched = matchOrders(stockSymbol, price, quantity, userId, type);
+  
+  if (matched) {
+    return res.status(200).json({
+      message: `Sell order matched for ${quantity} ${type} at price ${price}`,
+      ORDERBOOK,
+      STOCK_BALANCES,
+    });
   }
 
   return res.status(201).json({
@@ -431,77 +439,17 @@ app.post("/order/sell", (req: any, res: any) => {
   });
 });
 
-// Function to finalize pseudo orders with real buy orders
-function finalizeOrder(
-  stockSymbol: string,
-  price: string,
-  quantity: number,
-  userId: string,
-  type: string
-) {
-  const oppositeType = type === "yes" ? "no" : "yes";
-  const sellSide = ORDERBOOK[stockSymbol][oppositeType];
-
-  // Find the pseudo order corresponding to the original user's request
-  const pseudoUserId = `pseudo_${userId}`;
-  const sellOrders = sellSide[price]?.orders || {};
-
-  // Check if there is a pseudo order for the user that initiated the original buy
-  if (sellOrders[pseudoUserId] && sellOrders[pseudoUserId] >= quantity) {
-    // Transfer the "yes" stock to the original user who wanted it
-    STOCK_BALANCES[userId] = STOCK_BALANCES[userId] || {};
-    STOCK_BALANCES[userId][stockSymbol] = STOCK_BALANCES[userId][
-      stockSymbol
-    ] || {
-      yes: { quantity: 0, locked: 0 },
-      no: { quantity: 0, locked: 0 },
-    };
-    STOCK_BALANCES[userId][stockSymbol][type].quantity += quantity;
-
-    // Debit the locked funds from the user's balance
-    INR_BALANCES[userId].locked -= quantity * parseFloat(price);
-
-    // Find the real buyer who is buying the "no" stock
-    const realBuyerId = Object.keys(sellOrders).find(
-      (id) => id !== pseudoUserId
-    );
-    if (realBuyerId) {
-      STOCK_BALANCES[realBuyerId] = STOCK_BALANCES[realBuyerId] || {};
-      STOCK_BALANCES[realBuyerId][stockSymbol] = STOCK_BALANCES[realBuyerId][
-        stockSymbol
-      ] || {
-        yes: { quantity: 0, locked: 0 },
-        no: { quantity: 0, locked: 0 },
-      };
-      STOCK_BALANCES[realBuyerId][stockSymbol][oppositeType].quantity +=
-        quantity;
-
-      // Transfer the funds from the real buyer to the original user
-      INR_BALANCES[realBuyerId].balance -= quantity * parseFloat(price);
-      INR_BALANCES[userId].balance += quantity * parseFloat(price);
-
-      // Adjust the pseudo order and remove it if fully matched
-      sellOrders[pseudoUserId] -= quantity;
-      if (sellOrders[pseudoUserId] <= 0) {
-        delete sellOrders[pseudoUserId];
-      }
-
-      // Adjust the sell side's total quantity
-      sellSide[price].total -= quantity;
-      if (sellSide[price].total <= 0) {
-        delete sellSide[price];
-      }
-
-      return true;
-    }
-  }
-
-  return false;
+function sortOrderBook(stockSymbol:string,type:string){
+    const sortSide = ORDERBOOK[stockSymbol][type]
+    const sortedKeys = Object.keys(sortSide).sort((a,b)=>parseInt(a)-parseInt(b))
+    .reduce((acc,price)=>{
+        acc[price] = sortSide[price]
+        return acc
+    },{} as {[key: string]: any})
+    ORDERBOOK[stockSymbol][type] = sortedKeys
 }
 
-// app.post("/trade/mint", (req, res) => {
-//   const { stockSymbol, quantity } = req.body;
-// });
+
 
 app.listen(4001, () => {
   console.log("server is running on port 4001");
