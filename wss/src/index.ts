@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import express from "express";
 import Redis from "ioredis";
 import Bull from "bull";
 import dotenv from "dotenv";
@@ -9,27 +10,41 @@ dotenv.config();
 // Initialize Redis clients
 const redisConfig = {
   redis: {
-    host: 'redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com',
+    host: "redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com",
     port: 12599,
-    password: 'pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3'
-  }
+    password: "pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3",
+  },
 };
-
 const myQueue = new Bull("myQueue", redisConfig);
-if(myQueue){
-  console.log("connected to redis queue");
-  console.log(myQueue.getJobCounts());
-}
+myQueue.on("error", (error) => {
+  console.error("Queue error:", error);
+});
 
-// Create WebSocket server
-const wss = new WebSocketServer({ port: 8080 });
+myQueue.on("ready", async () => {
+  console.log("Connected to Redis queue 'myQueue'");
+  try {
+    const counts = await myQueue.getJobCounts();
+    console.log("Current job counts:", counts);
+  } catch (error) {
+    console.error("Error getting job counts:", error);
+  }
+});
 
-wss.on("connection", (ws: WebSocket) => {
-  console.log("New client connected");
-  // Handle messages from WebSocket clients
-  ws.addEventListener("message", (event) => {
-    console.log(`Received: ${event.data}`);
+const app = express();
+const httpServer = app.listen(8080);
+
+const wss = new WebSocketServer({ server: httpServer });
+
+wss.on("connection", function connection(ws) {
+  ws.on("error", console.error);
+
+  ws.on("message", function message(data, isBinary) {
+    wss.clients.forEach(function each(client) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data + "lol", { binary: isBinary });
+      }
+    });
   });
 
-  // Log when the WebSocket server is running
-  console.log("WebSocket server running on ws://localhost:8080");
+  ws.send("Hello! Message From Server!!");
+});

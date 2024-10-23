@@ -6,25 +6,18 @@ const app = express();
 
 const capprice = 1000;
 
-
-
 const redisConfig = {
   redis: {
-    host: 'redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com',
+    host: "redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com",
     port: 12599,
-    password: 'pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3'
-  }
+    password: "pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3",
+  },
 };
 
 const myQueue = new Bull("myQueue", redisConfig);
-if(myQueue){
+if (myQueue) {
   console.log("connected to redis queue");
 }
-
-const redisPublisher = new Redis(process.env.REDIS_URL || "");
-
-
-
 
 app.use(express.json());
 interface INR_BALANCES {
@@ -121,7 +114,7 @@ app.post("/reset", async (req: any, res: any) => {
   INR_BALANCES = {};
   ORDERBOOK = {};
   STOCK_BALANCES = {};
-  myQueue.add(ORDERBOOK)
+  myQueue.add(ORDERBOOK);
   return res.status(201).json({
     message: "data reset successfull",
     INR_BALANCES,
