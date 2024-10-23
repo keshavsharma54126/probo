@@ -1,39 +1,35 @@
-import WebSocket, { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import Redis from "ioredis";
+import Bull from "bull";
 import dotenv from "dotenv";
 
 // Load environment variables from .env file
 dotenv.config();
 
 // Initialize Redis clients
-const redisPublisher = new Redis(process.env.REDIS_URL || "");
-const redisSubscriber = new Redis(process.env.REDIS_URL || "");
+const redisConfig = {
+  redis: {
+    host: 'redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com',
+    port: 12599,
+    password: 'pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3'
+  }
+};
+
+const myQueue = new Bull("myQueue", redisConfig);
+if(myQueue){
+  console.log("connected to redis queue");
+  console.log(myQueue.getJobCounts());
+}
 
 // Create WebSocket server
 const wss = new WebSocketServer({ port: 8080 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws: WebSocket) => {
   console.log("New client connected");
-
   // Handle messages from WebSocket clients
-  ws.on("message", (message: string) => {
-    console.log(`Received: ${message}`);
-
-    // Publish message to Redis queue
-    redisPublisher.publish("message_queue", message);
+  ws.addEventListener("message", (event) => {
+    console.log(`Received: ${event.data}`);
   });
 
-  // Subscribe to Redis messages
-  redisSubscriber.subscribe("message_queue", () => {
-    console.log("Subscribed to Redis queue.");
-  });
-
-  redisSubscriber.on("message", (channel: string, message: string) => {
-    console.log(`Message from Redis: ${message}`);
-
-    // Send Redis message back to WebSocket clients
-    ws.send(`Redis says: ${message}`);
-  });
-});
-
-console.log("WebSocket server running on ws://localhost:8080");
+  // Log when the WebSocket server is running
+  console.log("WebSocket server running on ws://localhost:8080");
