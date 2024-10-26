@@ -1,23 +1,14 @@
 import express from "express";
-import Bull from "bull";
-import Redis from "ioredis";
+import { createClient } from "redis";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
+const client = createClient();
+client.on("error", (err) => console.log("Redis Client Error", err));
 
 const capprice = 1000;
-
-const redisConfig = {
-  redis: {
-    host: "redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com",
-    port: 12599,
-    password: "pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3",
-  },
-};
-
-const myQueue = new Bull("myQueue", redisConfig);
-if (myQueue) {
-  console.log("connected to redis queue");
-}
 
 app.use(express.json());
 interface INR_BALANCES {
@@ -108,19 +99,26 @@ let STOCK_BALANCES: any = {
   //   },
 };
 
-let pendingState = [];
-
 app.post("/reset", async (req: any, res: any) => {
-  INR_BALANCES = {};
-  ORDERBOOK = {};
-  STOCK_BALANCES = {};
-  myQueue.add(ORDERBOOK);
-  return res.status(201).json({
-    message: "data reset successfull",
-    INR_BALANCES,
-    ORDERBOOK,
-    STOCK_BALANCES,
-  });
+  try {
+    INR_BALANCES = {};
+    ORDERBOOK = {};
+    STOCK_BALANCES = {};
+    await client.lPush(
+      "data",
+      JSON.stringify({ INR_BALANCES, ORDERBOOK, STOCK_BALANCES })
+    );
+    return res.status(201).json({
+      message: "data reset successfull",
+      INR_BALANCES,
+      ORDERBOOK,
+      STOCK_BALANCES,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      message: "failed to reset the data",
+    });
+  }
 });
 
 app.post("/user/create/:userId", (req: any, res: any) => {
@@ -626,8 +624,18 @@ function sortOrderBook(stockSymbol: string, type: string) {
   ORDERBOOK[stockSymbol][type] = sortedKeys;
 }
 
-app.listen(4001, () => {
-  console.log("server is running on port 4001");
-});
+async function startServer() {
+  try {
+    await client.connect();
+    console.log("connected to redis");
+    await app.listen(4001, () => {
+      console.log("server is running on port 4001");
+    });
+  } catch (e) {
+    console.error("failed to start the server", e);
+  }
+}
+
+startServer();
 
 export default app;
