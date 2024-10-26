@@ -1,12 +1,10 @@
 import express from "express";
-import { createClient } from "redis";
+
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
-const client = createClient();
-client.on("error", (err) => console.log("Redis Client Error", err));
 
 const capprice = 1000;
 
@@ -104,10 +102,7 @@ app.post("/reset", async (req: any, res: any) => {
     INR_BALANCES = {};
     ORDERBOOK = {};
     STOCK_BALANCES = {};
-    await client.lPush(
-      "data",
-      JSON.stringify({ INR_BALANCES, ORDERBOOK, STOCK_BALANCES })
-    );
+
     return res.status(201).json({
       message: "data reset successfull",
       INR_BALANCES,
@@ -626,8 +621,6 @@ function sortOrderBook(stockSymbol: string, type: string) {
 
 async function startServer() {
   try {
-    await client.connect();
-    console.log("connected to redis");
     await app.listen(4001, () => {
       console.log("server is running on port 4001");
     });
