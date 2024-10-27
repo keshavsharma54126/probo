@@ -1,0 +1,18 @@
+import { createClient } from "redis";
+import { Engine } from "./engine";
+
+async function main() {
+  const engine = new Engine();
+  const redisClient = createClient();
+  await redisClient.connect();
+  console.log("Connected to Redis");
+
+  while (true) {
+    const response = await redisClient.brPop("messages" as string, 0);
+    if (response) {
+      engine.process(JSON.parse(response));
+    }
+  }
+}
+
+main();
