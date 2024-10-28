@@ -24,7 +24,7 @@ export class RedisManager {
       const id = this.getRandomId();
       this.client.subscribe(id, (message) => {
         this.client.unsubscribe(id);
-        return JSON.parse(message);
+        resolve(JSON.parse(message));
       });
       this.publisher.lPush(
         "message",

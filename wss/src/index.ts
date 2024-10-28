@@ -7,17 +7,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Initialize Redis clients
-const redisConfig = {
-  redis: {
-    host: "redis-12599.c256.us-east-1-2.ec2.redns.redis-cloud.com",
-    port: 12599,
-    password: "pLcSvcN6ayctQYflT3RPY8gcEOKxRHh3",
-  },
-};
-const myQueue = new Bull("myQueue", redisConfig);
-myQueue.on("error", (error) => {
-  console.error("Queue error:", error);
-});
 
 const app = express();
 const httpServer = app.listen(8080);
