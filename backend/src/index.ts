@@ -51,7 +51,7 @@ let ORDERBOOK: any = {
   //   BTC_USDT_10_Oct_2024_9_30: {
   //     yes: {
   //       "9.5": {
-  //         total: 12,
+  //         total: 12,u
   //         orders: {
   //           user1: 10,
   //           user2: 2,
@@ -102,7 +102,7 @@ app.post("/reset", async (req: any, res: any) => {
     type: toengine.RESET,
     data: {},
   });
-  return res.status(201).json({
+  return res.json({
     payload: (response as toengine.MessageFromEngine).payload,
   });
 });

@@ -55,7 +55,10 @@ export type MessageFromApi =
     }
   | {
       type: typeof ONRAMP_INR;
-      data: {};
+      data: {
+        userId: string;
+        amount: number;
+      };
     }
   | {
       type: typeof GET_STOCK_ORDERBOOK;
@@ -65,13 +68,27 @@ export type MessageFromApi =
     }
   | {
       type: typeof BUY_ORDER;
-      data: {};
+      data: {
+        userId: string;
+        stockSymbol: string;
+        quantity: number;
+        price: number;
+        type: string;
+      };
     }
   | {
       type: typeof SELL_ORDER;
-      data: {};
+      data: {
+        userId: string;
+        stockSymbol: string;
+        quantity: number;
+        price: number;
+        type: string;
+      };
     }
   | {
       type: typeof CANCEL_ORDER;
-      data: {};
+      data: {
+        orderId: string;
+      };
     };
