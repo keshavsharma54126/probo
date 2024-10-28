@@ -1,5 +1,6 @@
 import express from "express";
-
+import { RedisManager } from "./redisManager.js";
+import * as toengine from "./types/index.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -96,24 +97,14 @@ let STOCK_BALANCES: any = {
   //     },
   //   },
 };
-
 app.post("/reset", async (req: any, res: any) => {
-  try {
-    INR_BALANCES = {};
-    ORDERBOOK = {};
-    STOCK_BALANCES = {};
-
-    return res.status(201).json({
-      message: "data reset successfull",
-      INR_BALANCES,
-      ORDERBOOK,
-      STOCK_BALANCES,
-    });
-  } catch (e) {
-    return res.status(500).json({
-      message: "failed to reset the data",
-    });
-  }
+  const response = await RedisManager.getInstance().sendAndAwait({
+    type: toengine.RESET,
+    data: {},
+  });
+  return res.status(201).json({
+    payload: (response as toengine.MessageFromEngine).payload,
+  });
 });
 
 app.post("/user/create/:userId", (req: any, res: any) => {
@@ -619,16 +610,8 @@ function sortOrderBook(stockSymbol: string, type: string) {
   ORDERBOOK[stockSymbol][type] = sortedKeys;
 }
 
-async function startServer() {
-  try {
-    await app.listen(4001, () => {
-      console.log("server is running on port 4001");
-    });
-  } catch (e) {
-    console.error("failed to start the server", e);
-  }
-}
-
-startServer();
+app.listen(4001, () => {
+  console.log("server is running on port 4001");
+});
 
 export default app;

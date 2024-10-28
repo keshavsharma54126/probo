@@ -1,6 +1,7 @@
 import fs from "fs";
 import { RedisManager } from "./redisManager";
-
+import * as fromapi from "./types/fromapi";
+import * as toapi from "./types/toapi";
 interface INR_BALANCES {
   [key: string]: {
     balance: number;
@@ -135,10 +136,39 @@ export class Engine {
     fs.writeFileSync("./snapshot.json", JSON.stringify(snapshotSnapshot));
   }
 
-  process({ message, clientId }: { message: any; clientId: string }) {
+  process({
+    message,
+    clientId,
+  }: {
+    message: fromapi.MessageFromApi;
+    clientId: string;
+  }) {
     const { type, data } = message;
     switch (type) {
-      case "ORDER":
+      case fromapi.RESET:
+        try {
+          this.ORDERBOOK = {};
+          this.INR_BALANCES = {};
+          this.STOCK_BALANCES = {};
+          RedisManager.getInstance().sendToApi(clientId, {
+            type: "RESET",
+            payload: {
+              ORDERBOOK: this.ORDERBOOK,
+              INR_BALANCES: this.INR_BALANCES,
+              STOCK_BALANCES: this.STOCK_BALANCES,
+            },
+          });
+        } catch (e) {
+          console.log("could not reset the variables in the engine", e);
+          RedisManager.getInstance().sendToApi(clientId, {
+            type: "RESET",
+            payload: {
+              ORDERBOOK: this.ORDERBOOK,
+              INR_BALANCES: this.INR_BALANCES,
+              STOCK_BALANCES: this.STOCK_BALANCES,
+            },
+          });
+        }
         break;
     }
   }
