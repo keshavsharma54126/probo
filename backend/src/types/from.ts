@@ -1,0 +1,23 @@
+import {
+  RESET,
+  CREATE_USER,
+  CREATE_SYMBOL,
+  GET_ORDERBOOK,
+  GET_INR_BALANCES,
+  GET_STOCK_BALANCES,
+  GET_USER_INR_BALANCE,
+  GET_USER_STOCK_BALANCE,
+  ONRAMP_INR,
+  GET_STOCK_ORDERBOOK,
+  BUY_ORDER,
+  SELL_ORDER,
+  CANCEL_ORDER,
+} from "./to";
+export type MessageFromEngine = {
+  type: typeof RESET;
+  payload: {
+    ORDERBOOK: {};
+    INR_BALANCES: {};
+    STOCK_BALANCES: {};
+  };
+};

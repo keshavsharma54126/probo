@@ -1,6 +1,7 @@
 import express from "express";
 import { RedisManager } from "./redisManager.js";
-import * as toengine from "./types/index.js";
+import * as fromengine from "./types/from.js";
+import * as toengine from "./types/to.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -98,31 +99,31 @@ let STOCK_BALANCES: any = {
   //   },
 };
 app.post("/reset", async (req: any, res: any) => {
-  const response = await RedisManager.getInstance().sendAndAwait({
-    type: toengine.RESET,
-    data: {},
-  });
-  return res.json({
-    payload: (response as toengine.MessageFromEngine).payload,
-  });
+  try {
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.RESET,
+      data: {},
+    });
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      message: "failed to reset the engine",
+    });
+  }
 });
 
-app.post("/user/create/:userId", (req: any, res: any) => {
+app.post("/user/create/:userId", async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    if (INR_BALANCES[userId]) {
-      return res.status(400).json({
-        message: "user already existe",
-      });
-    }
-
-    INR_BALANCES[userId] = {
-      balance: 0,
-      locked: 0,
-    };
-    return res.status(201).json({
-      message: `User ${userId} created`,
-      INR_BALANCES,
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.CREATE_USER,
+      data: {
+        userId: req.params.userId,
+      },
+    });
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -131,23 +132,16 @@ app.post("/user/create/:userId", (req: any, res: any) => {
   }
 });
 
-app.post("/symbol/create/:stockSymbol", (req: any, res: any) => {
+app.post("/symbol/create/:stockSymbol", async (req: any, res: any) => {
   try {
-    const { stockSymbol } = req.params;
-    if (ORDERBOOK[stockSymbol as keyof typeof ORDERBOOK]) {
-      return res.status(400).json({
-        message: "symbol already present",
-      });
-    }
-    //@ts-ignore
-    ORDERBOOK[stockSymbol] = {
-      yes: {},
-      no: {},
-    };
-    //@ts-ignore
-    return res.status(201).json({
-      message: `Symbol ${stockSymbol} created`,
-      ORDERBOOK,
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.CREATE_SYMBOL,
+      data: {
+        symbol: req.params.stockSymbol,
+      },
+    });
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -155,10 +149,14 @@ app.post("/symbol/create/:stockSymbol", (req: any, res: any) => {
     });
   }
 });
-app.get("/orderbook", (req: any, res: any) => {
+app.get("/orderbook", async (req: any, res: any) => {
   try {
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_ORDERBOOK,
+      data: {},
+    });
     return res.json({
-      ORDERBOOK,
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -166,10 +164,14 @@ app.get("/orderbook", (req: any, res: any) => {
     });
   }
 });
-app.get("/balances/inr", (req: any, res: any) => {
+app.get("/balances/inr", async (req: any, res: any) => {
   try {
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_INR_BALANCES,
+      data: {},
+    });
     return res.json({
-      INR_BALANCES,
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -178,10 +180,14 @@ app.get("/balances/inr", (req: any, res: any) => {
   }
 });
 
-app.get("/balances/stock", (req: any, res: any) => {
+app.get("/balances/stock", async (req: any, res: any) => {
   try {
-    return res.status(200).json({
-      STOCK_BALANCES,
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_STOCK_BALANCES,
+      data: {},
+    });
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -190,19 +196,18 @@ app.get("/balances/stock", (req: any, res: any) => {
   }
 });
 
-app.get("/balance/inr/:userId", (req: any, res: any) => {
+app.get("/balance/inr/:userId", async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    if (!INR_BALANCES[userId]) {
-      return res.status(400).json({
-        message: "user not found",
-      });
-    }
-    const userBalance = {
-      userId: userId,
-      balance: INR_BALANCES[userId].balance,
-    };
-    return res.json(userBalance);
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_USER_INR_BALANCE,
+      data: {
+        userId: req.params.userId,
+      },
+    });
+
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
+    });
   } catch (err) {
     return res.status(500).json({
       message: "failed to get the inr balance for user",
@@ -212,17 +217,16 @@ app.get("/balance/inr/:userId", (req: any, res: any) => {
 
 app.post("/onramp/inr", async (req: any, res: any) => {
   try {
-    const body = await req.body;
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.ONRAMP_INR,
+      data: {
+        userId: req.body.userId,
+        amount: req.body.amount,
+      },
+    });
 
-    if (!INR_BALANCES[body.userId]) {
-      return res.status(400).json({
-        message: "user not found",
-      });
-    }
-
-    INR_BALANCES[body.userId].balance += body.amount;
     return res.json({
-      message: `Onramped ${body.userId} with amount ${body.amount}`,
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.status(500).json({
@@ -231,37 +235,37 @@ app.post("/onramp/inr", async (req: any, res: any) => {
   }
 });
 
-app.get("/balance/stock/:userId", (req: any, res: any) => {
+app.get("/balance/stock/:userId", async (req: any, res: any) => {
   try {
-    const { userId } = req.params;
-    //@ts-ignore
-    if (!STOCK_BALANCES[userId]) {
-      return res.status(400).json({
-        message: "user not found",
-      });
-    }
-    //@ts-ignore
-    return res.json(STOCK_BALANCES[userId]);
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_USER_STOCK_BALANCE,
+      data: {
+        userId: req.params.userId,
+      },
+    });
+    return res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
+    });
   } catch (err) {
     return res.status(500).json({
       message: "failed to get the stock balance for user",
     });
   }
 });
-app.get("/orderbook/:stockSymbol", (req: any, res: any) => {
-  const { stockSymbol } = req.params;
+app.get("/orderbook/:stockSymbol", async (req: any, res: any) => {
   try {
-    if (!ORDERBOOK[stockSymbol]) {
-      return res.json({
-        message: `${stockSymbol} not found in order book`,
-      });
-    }
-    return res.json({
-      orderbook: ORDERBOOK[stockSymbol],
+    const response = await RedisManager.getInstance().sendAndAwait({
+      type: toengine.GET_STOCK_ORDERBOOK,
+      data: {
+        symbol: req.params.stockSymbol,
+      },
+    });
+    res.json({
+      payload: (response as fromengine.MessageFromEngine).payload,
     });
   } catch (err) {
     return res.json({
-      message: `could not get the order book for the ${stockSymbol}`,
+      message: `could not get the order book for the ${req.params.stockSymbol}`,
     });
   }
 });

@@ -1,1 +1,1 @@
-{"ORDERBOOK":{},"INR_BALANCES":{},"STOCK_BALANCES":{}}
+{"ORDERBOOK":{"eth":{"yes":{},"no":{}}},"INR_BALANCES":{"user1":{"balance":10000,"locked":0},"user2":{"balance":0,"locked":0},"user11":{"balance":0,"locked":0}},"STOCK_BALANCES":{"user1":{}}}

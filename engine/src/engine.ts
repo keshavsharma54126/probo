@@ -191,7 +191,7 @@ export class Engine {
       this.INR_BALANCES = {};
       this.STOCK_BALANCES = {};
       RedisManager.getInstance().sendToApi(clientId, {
-        type: "RESET",
+        type: toapi.RESET,
         payload: {
           ORDERBOOK: this.ORDERBOOK,
           INR_BALANCES: this.INR_BALANCES,
@@ -201,7 +201,7 @@ export class Engine {
     } catch (e) {
       console.log("could not reset the variables in the engine", e);
       RedisManager.getInstance().sendToApi(clientId, {
-        type: "RESET",
+        type: toapi.RESET,
         payload: {
           ORDERBOOK: this.ORDERBOOK,
           INR_BALANCES: this.INR_BALANCES,
@@ -233,7 +233,7 @@ export class Engine {
   createSymbol({ symbol }: { symbol: string }, clientId: string) {
     if (this.ORDERBOOK[symbol]) {
       RedisManager.getInstance().sendToApi(clientId, {
-        type: "CREATE_SYMBOL",
+        type: toapi.CREATE_SYMBOL,
         payload: { message: "symbol already present" },
       });
       return;
@@ -241,7 +241,7 @@ export class Engine {
 
     this.ORDERBOOK[symbol] = { yes: {}, no: {} };
     RedisManager.getInstance().sendToApi(clientId, {
-      type: "CREATE_SYMBOL",
+      type: toapi.CREATE_SYMBOL,
       payload: {
         message: `Symbol ${symbol} created`,
         ORDERBOOK: this.ORDERBOOK,
@@ -261,6 +261,10 @@ export class Engine {
       type: "GET_INR_BALANCES",
       payload: { INR_BALANCES: this.INR_BALANCES },
     });
+    RedisManager.getInstance().publishMessage("inr_balances", {
+      type: "GET_INR_BALANCES",
+      payload: { INR_BALANCES: this.INR_BALANCES },
+    });
   }
 
   getStockBalances(clientId: string) {
@@ -276,6 +280,7 @@ export class Engine {
         type: "GET_USER_INR_BALANCE",
         payload: { message: "user not found" },
       });
+
       return;
     }
 
@@ -283,7 +288,7 @@ export class Engine {
       type: "GET_USER_INR_BALANCE",
       payload: {
         userId: userId,
-        balance: this.INR_BALANCES[userId].balance,
+        balance: this.INR_BALANCES[userId],
       },
     });
   }
@@ -295,8 +300,9 @@ export class Engine {
     if (!this.INR_BALANCES[userId]) {
       RedisManager.getInstance().sendToApi(clientId, {
         type: "ONRAMP_INR",
-        payload: { message: "user not found" },
+        payload: { message: "user not found haa haa" },
       });
+
       return;
     }
 
@@ -309,9 +315,10 @@ export class Engine {
 
   getUserStockBalance({ userId }: { userId: string }, clientId: string) {
     if (!this.STOCK_BALANCES[userId]) {
+      this.STOCK_BALANCES[userId] = {};
       RedisManager.getInstance().sendToApi(clientId, {
         type: "GET_USER_STOCK_BALANCE",
-        payload: { message: "user not found" },
+        payload: this.STOCK_BALANCES[userId],
       });
       return;
     }
@@ -333,21 +340,31 @@ export class Engine {
 
     RedisManager.getInstance().sendToApi(clientId, {
       type: "GET_STOCK_ORDERBOOK",
-      payload: { orderbook: this.ORDERBOOK[symbol] },
+      payload: { symbol: symbol, orderbook: this.ORDERBOOK[symbol] },
     });
   }
 
-  //   // Helper method for sorting orderbook
-  //   private sortOrderBook(stockSymbol: string, type: string) {
-  //     const sortSide = this.ORDERBOOK[stockSymbol][type];
-  //     const sortedKeys = Object.keys(sortSide)
-  //       .sort((a, b) => parseInt(a) - parseInt(b))
-  //       .reduce((acc: { [key: string]: OrderSideEntry }, price) => {
-  //         acc[price] = sortSide[price];
-  //         return acc;
-  //       }, {} as { [key: string]: any });
-  //     this.ORDERBOOK[stockSymbol][type] = sortedKeys;
-  //   }
+  // Helper method for sorting orderbook
+  private sortOrderBook(stockSymbol: string, type: string) {
+    const sortSide = this.ORDERBOOK[stockSymbol][type];
+    const sortedKeys = Object.keys(sortSide)
+      .sort((a, b) => parseInt(a) - parseInt(b))
+      .reduce(
+        (
+          acc: {
+            [key: string]: { orders: { [key: string]: number }; total: number };
+          },
+          price
+        ) => {
+          acc[price] = sortSide[price];
+          return acc;
+        },
+        {} as {
+          [key: string]: { orders: { [key: string]: number }; total: number };
+        }
+      );
+    this.ORDERBOOK[stockSymbol][type] = sortedKeys;
+  }
 
   //   // Add these methods to the Engine class
 
