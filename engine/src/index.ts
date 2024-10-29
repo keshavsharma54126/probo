@@ -10,6 +10,7 @@ async function main() {
   while (true) {
     const response = await redisClient.rPop("message" as string);
     if (response) {
+      console.log("Received message from Redis:", response);
       engine.process(JSON.parse(response));
     }
   }

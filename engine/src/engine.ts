@@ -2,13 +2,17 @@ import fs from "fs";
 import { RedisManager } from "./redisManager";
 import * as fromapi from "./types/fromapi";
 import * as toapi from "./types/toapi";
-interface INR_BALANCES {
-  [key: string]: {
-    balance: number;
-    locked: number;
-  };
+
+interface UserBalance {
+  balance: number;
+  locked: number;
 }
-interface OrderDetails {
+
+interface INR_BALANCES {
+  [userId: string]: UserBalance;
+}
+
+interface Order {
   total: number;
   orders: {
     [userId: string]: number;
@@ -16,7 +20,7 @@ interface OrderDetails {
 }
 
 interface OrderSide {
-  [price: string]: OrderDetails;
+  [price: string]: Order;
 }
 
 interface Symbol {
@@ -28,12 +32,19 @@ interface ORDERBOOK {
   [symbol: string]: Symbol;
 }
 
+interface Stock {
+  quantity: number;
+  locked: number;
+}
+
+interface UserStock {
+  yes: Stock;
+  no: Stock;
+}
+
 interface STOCK_BALANCES {
-  [key: string]: {
-    [key: string]: {
-      quantity: number;
-      locked: number;
-    };
+  [userId: string]: {
+    [symbol: string]: UserStock;
   };
 }
 
@@ -346,6 +357,7 @@ export class Engine {
 
   // Helper method for sorting orderbook
   private sortOrderBook(stockSymbol: string, type: string) {
+    //@ts-ignore
     const sortSide = this.ORDERBOOK[stockSymbol][type];
     const sortedKeys = Object.keys(sortSide)
       .sort((a, b) => parseInt(a) - parseInt(b))
@@ -363,349 +375,356 @@ export class Engine {
           [key: string]: { orders: { [key: string]: number }; total: number };
         }
       );
+    //@ts-ignore
     this.ORDERBOOK[stockSymbol][type] = sortedKeys;
   }
 
-  //   // Add these methods to the Engine class
+  // Add these methods to the Engine class
 
-  //   private matchWithSide(
-  //     side: OrderSide,
-  //     remainingQuantity: number,
-  //     price: number,
-  //     userId: string,
-  //     stockSymbol: string,
-  //     type: string,
-  //     isPseudo: boolean
-  //   ): number {
-  //     for (const orderPrice in side) {
-  //       if (
-  //         (isPseudo && parseInt(orderPrice) === price) ||
-  //         (!isPseudo && parseInt(orderPrice) <= price)
-  //       ) {
-  //         const availableOrders = side[orderPrice];
-  //         let quantityToMatch = Math.min(
-  //           remainingQuantity,
-  //           availableOrders.total
-  //         );
+  private matchWithSide(
+    side: OrderSide,
+    remainingQuantity: number,
+    price: number,
+    userId: string,
+    stockSymbol: string,
+    type: string,
+    isPseudo: boolean
+  ): number {
+    for (const orderPrice in side) {
+      if (
+        (isPseudo && parseInt(orderPrice) === price) ||
+        (!isPseudo && parseInt(orderPrice) <= price)
+      ) {
+        const availableOrders = side[orderPrice];
+        let quantityToMatch = Math.min(
+          remainingQuantity,
+          availableOrders.total
+        );
 
-  //         remainingQuantity -= quantityToMatch;
+        remainingQuantity -= quantityToMatch;
 
-  //         // Update user's balance and stock
-  //         if (!isPseudo) {
-  //           if (!this.INR_BALANCES[userId]) {
-  //             console.error(`User ${userId} not found in INR_BALANCES`);
-  //             return remainingQuantity;
-  //           }
-  //           this.INR_BALANCES[userId].locked -=
-  //             quantityToMatch * parseInt(orderPrice);
-  //           if (!this.STOCK_BALANCES[userId]) this.STOCK_BALANCES[userId] = {};
-  //           if (!this.STOCK_BALANCES[userId][stockSymbol])
-  //             this.STOCK_BALANCES[userId][stockSymbol] = {
-  //               yes: { quantity: 0, locked: 0 },
-  //               no: { quantity: 0, locked: 0 },
-  //             };
-  //           this.STOCK_BALANCES[userId][stockSymbol][type].quantity +=
-  //             quantityToMatch;
-  //         }
+        // Update user's balance and stock
+        if (!isPseudo) {
+          if (!this.INR_BALANCES[userId]) {
+            console.error(`User ${userId} not found in INR_BALANCES`);
+            return remainingQuantity;
+          }
+          this.INR_BALANCES[userId].locked -=
+            quantityToMatch * parseInt(orderPrice);
+          if (!this.STOCK_BALANCES[userId]) this.STOCK_BALANCES[userId] = {};
+          if (!this.STOCK_BALANCES[userId][stockSymbol])
+            this.STOCK_BALANCES[userId][stockSymbol] = {
+              yes: { quantity: 0, locked: 0 },
+              no: { quantity: 0, locked: 0 },
+            };
+          //@ts-ignore
+          this.STOCK_BALANCES[userId][stockSymbol][type].quantity +=
+            quantityToMatch;
+        }
 
-  //         while (quantityToMatch > 0) {
-  //           for (const sellerId in availableOrders.orders) {
-  //             const sellerQuantity = availableOrders.orders[sellerId];
-  //             const matchedQuantity = Math.min(sellerQuantity, quantityToMatch);
+        while (quantityToMatch > 0) {
+          for (const sellerId in availableOrders.orders) {
+            const sellerQuantity = availableOrders.orders[sellerId];
+            const matchedQuantity = Math.min(sellerQuantity, quantityToMatch);
 
-  //             // Update seller's balance and stock
-  //             if (sellerId.startsWith("pseudo")) {
-  //               const realSellerId = sellerId.replace("pseudo", "");
-  //               if (!this.INR_BALANCES[realSellerId]) {
-  //                 console.error(`User ${realSellerId} not found in INR_BALANCES`);
-  //                 continue;
-  //               }
-  //               this.INR_BALANCES[realSellerId].locked -=
-  //                 matchedQuantity * parseInt(orderPrice);
-  //               if (!this.STOCK_BALANCES[realSellerId])
-  //                 this.STOCK_BALANCES[realSellerId] = {};
-  //               if (!this.STOCK_BALANCES[realSellerId][stockSymbol])
-  //                 this.STOCK_BALANCES[realSellerId][stockSymbol] = {
-  //                   yes: { quantity: 0, locked: 0 },
-  //                   no: { quantity: 0, locked: 0 },
-  //                 };
-  //               this.STOCK_BALANCES[realSellerId][stockSymbol][
-  //                 type === "yes" ? "no" : "yes"
-  //               ].quantity += matchedQuantity;
-  //             } else {
-  //               if (!this.INR_BALANCES[sellerId]) {
-  //                 console.error(`User ${sellerId} not found in INR_BALANCES`);
-  //                 continue;
-  //               }
-  //               this.INR_BALANCES[sellerId].balance +=
-  //                 matchedQuantity * parseInt(orderPrice);
-  //               if (!this.STOCK_BALANCES[sellerId]?.[stockSymbol]) {
-  //                 console.error(
-  //                   `Stock balance not found for user ${sellerId} and symbol ${stockSymbol}`
-  //                 );
-  //                 continue;
-  //               }
-  //               this.STOCK_BALANCES[sellerId][stockSymbol][type].locked -=
-  //                 matchedQuantity;
-  //             }
+            // Update seller's balance and stock
+            if (sellerId.startsWith("pseudo")) {
+              const realSellerId = sellerId.replace("pseudo", "");
+              if (!this.INR_BALANCES[realSellerId]) {
+                console.error(`User ${realSellerId} not found in INR_BALANCES`);
+                continue;
+              }
+              this.INR_BALANCES[realSellerId].locked -=
+                matchedQuantity * parseInt(orderPrice);
+              if (!this.STOCK_BALANCES[realSellerId])
+                this.STOCK_BALANCES[realSellerId] = {};
+              if (!this.STOCK_BALANCES[realSellerId][stockSymbol])
+                this.STOCK_BALANCES[realSellerId][stockSymbol] = {
+                  yes: { quantity: 0, locked: 0 },
+                  no: { quantity: 0, locked: 0 },
+                };
+              this.STOCK_BALANCES[realSellerId][stockSymbol][
+                type === "yes" ? "no" : "yes"
+              ].quantity += matchedQuantity;
+            } else {
+              if (!this.INR_BALANCES[sellerId]) {
+                console.error(`User ${sellerId} not found in INR_BALANCES`);
+                continue;
+              }
+              this.INR_BALANCES[sellerId].balance +=
+                matchedQuantity * parseInt(orderPrice);
+              if (!this.STOCK_BALANCES[sellerId]?.[stockSymbol]) {
+                console.error(
+                  `Stock balance not found for user ${sellerId} and symbol ${stockSymbol}`
+                );
+                continue;
+              }
+              //@ts-ignore
+              this.STOCK_BALANCES[sellerId][stockSymbol][type].locked -=
+                matchedQuantity;
+            }
 
-  //             // Update order quantities
-  //             availableOrders.orders[sellerId] -= matchedQuantity;
-  //             availableOrders.total -= matchedQuantity;
-  //             quantityToMatch -= matchedQuantity;
+            // Update order quantities
+            availableOrders.orders[sellerId] -= matchedQuantity;
+            availableOrders.total -= matchedQuantity;
+            quantityToMatch -= matchedQuantity;
 
-  //             if (availableOrders.orders[sellerId] <= 0) {
-  //               delete availableOrders.orders[sellerId];
-  //             }
+            if (availableOrders.orders[sellerId] <= 0) {
+              delete availableOrders.orders[sellerId];
+            }
 
-  //             if (quantityToMatch <= 0) break;
-  //           }
-  //         }
+            if (quantityToMatch <= 0) break;
+          }
+        }
 
-  //         if (availableOrders.total <= 0) {
-  //           delete side[orderPrice];
-  //         }
-  //       }
-  //     }
-  //     return remainingQuantity;
-  //   }
+        if (availableOrders.total <= 0) {
+          delete side[orderPrice];
+        }
+      }
+    }
+    return remainingQuantity;
+  }
 
-  //   buyOrder(
-  //     {
-  //       userId,
-  //       stockSymbol,
-  //       quantity,
-  //       price,
-  //       type,
-  //     }: {
-  //       userId: string;
-  //       stockSymbol: string;
-  //       quantity: number;
-  //       price: number;
-  //       type: string;
-  //     },
-  //     clientId: string
-  //   ) {
-  //     try {
-  //       if (!this.INR_BALANCES[userId]) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "BUY_ORDER",
-  //           payload: { message: "User not found" },
-  //         });
-  //         return;
-  //       }
+  buyOrder(
+    {
+      userId,
+      stockSymbol,
+      quantity,
+      price,
+      type,
+    }: {
+      userId: string;
+      stockSymbol: string;
+      quantity: number;
+      price: number;
+      type: string;
+    },
+    clientId: string
+  ) {
+    try {
+      if (!this.INR_BALANCES[userId]) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: { message: "User not found" },
+        });
+        return;
+      }
 
-  //       if (!this.ORDERBOOK[stockSymbol]) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "BUY_ORDER",
-  //           payload: { message: `Market for ${stockSymbol} does not exist` },
-  //         });
-  //         return;
-  //       }
+      if (!this.ORDERBOOK[stockSymbol]) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: { message: `Market for ${stockSymbol} does not exist` },
+        });
+        return;
+      }
 
-  //       const totalCost = quantity * price;
-  //       if (this.INR_BALANCES[userId].balance < totalCost) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "BUY_ORDER",
-  //           payload: { message: "Insufficient balance" },
-  //         });
-  //         return;
-  //       }
+      const totalCost = quantity * price;
+      if (this.INR_BALANCES[userId].balance < totalCost) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: { message: "Insufficient balance" },
+        });
+        return;
+      }
 
-  //       // Lock the funds
-  //       this.INR_BALANCES[userId].balance -= totalCost;
-  //       this.INR_BALANCES[userId].locked += totalCost;
+      // Lock the funds
+      this.INR_BALANCES[userId].balance -= totalCost;
+      this.INR_BALANCES[userId].locked += totalCost;
 
-  //       let remainingQuantity = quantity;
+      let remainingQuantity = quantity;
 
-  //       // Try to match with existing orders
-  //       remainingQuantity = this.matchWithSide(
-  //         this.ORDERBOOK[stockSymbol][type],
-  //         remainingQuantity,
-  //         price,
-  //         userId,
-  //         stockSymbol,
-  //         type,
-  //         false
-  //       );
+      // Try to match with existing orders
+      remainingQuantity = this.matchWithSide(
+        //@ts-ignore
+        this.ORDERBOOK[stockSymbol][type],
+        remainingQuantity,
+        price,
+        userId,
+        stockSymbol,
+        type,
+        false
+      );
 
-  //       // If there's remaining quantity, place a new order
-  //       if (remainingQuantity > 0) {
-  //         const buySide =
-  //           type === "yes"
-  //             ? this.ORDERBOOK[stockSymbol].yes
-  //             : this.ORDERBOOK[stockSymbol].no;
+      // If there's remaining quantity, place a new order
+      if (remainingQuantity > 0) {
+        const buySide =
+          type === "yes"
+            ? this.ORDERBOOK[stockSymbol].yes
+            : this.ORDERBOOK[stockSymbol].no;
 
-  //         if (!buySide[price]) {
-  //           buySide[price] = { total: 0, orders: {} };
-  //         }
-  //         buySide[price].orders[userId] = remainingQuantity;
-  //         buySide[price].total += remainingQuantity;
-  //       }
+        if (!buySide[price]) {
+          buySide[price] = { total: 0, orders: {} };
+        }
+        buySide[price].orders[userId] = remainingQuantity;
+        buySide[price].total += remainingQuantity;
+      }
 
-  //       // Sort the order book
-  //       this.sortOrderBook(stockSymbol, "yes");
-  //       this.sortOrderBook(stockSymbol, "no");
+      // Sort the order book
+      this.sortOrderBook(stockSymbol, "yes");
+      this.sortOrderBook(stockSymbol, "no");
 
-  //       RedisManager.getInstance().sendToApi(clientId, {
-  //         type: "BUY_ORDER",
-  //         payload: {
-  //           message: `Buy order placed for ${quantity} ${type} at price ${price}`,
-  //           ORDERBOOK: this.ORDERBOOK,
-  //           STOCK_BALANCES: this.STOCK_BALANCES,
-  //           INR_BALANCES: this.INR_BALANCES,
-  //         },
-  //       });
-  //     } catch (err) {
-  //       console.error(err);
-  //       RedisManager.getInstance().sendToApi(clientId, {
-  //         type: "BUY_ORDER",
-  //         payload: { message: "Failed to process buy order" },
-  //       });
-  //     }
-  //   }
+      RedisManager.getInstance().sendToApi(clientId, {
+        type: "BUY_ORDER",
+        payload: {
+          message: `Buy order placed for ${quantity} ${type} at price ${price}`,
+          ORDERBOOK: this.ORDERBOOK,
+          STOCK_BALANCES: this.STOCK_BALANCES,
+          INR_BALANCES: this.INR_BALANCES,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      RedisManager.getInstance().sendToApi(clientId, {
+        type: "BUY_ORDER",
+        payload: { message: "Failed to process buy order" },
+      });
+    }
+  }
 
-  //   sellOrder(
-  //     {
-  //       userId,
-  //       stockSymbol,
-  //       quantity,
-  //       price,
-  //       type,
-  //     }: {
-  //       userId: string;
-  //       stockSymbol: string;
-  //       quantity: number;
-  //       price: number;
-  //       type: string;
-  //     },
-  //     clientId: string
-  //   ) {
-  //     try {
-  //       if (
-  //         !this.STOCK_BALANCES[userId] ||
-  //         !this.STOCK_BALANCES[userId][stockSymbol] ||
-  //         !this.STOCK_BALANCES[userId][stockSymbol][type]
-  //       ) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "SELL_ORDER",
-  //           payload: { message: "User does not have stock to sell" },
-  //         });
-  //         return;
-  //       }
+  sellOrder(
+    {
+      userId,
+      stockSymbol,
+      quantity,
+      price,
+      type,
+    }: {
+      userId: string;
+      stockSymbol: string;
+      quantity: number;
+      price: number;
+      type: string;
+    },
+    clientId: string
+  ) {
+    try {
+      if (
+        !this.STOCK_BALANCES[userId] ||
+        !this.STOCK_BALANCES[userId][stockSymbol] ||
+        //@ts-ignore
+        !this.STOCK_BALANCES[userId][stockSymbol][type]
+      ) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "SELL_ORDER",
+          payload: { message: "User does not have stock to sell" },
+        });
+        return;
+      }
 
-  //       const userStock = this.STOCK_BALANCES[userId][stockSymbol][type];
-  //       if (userStock.quantity < quantity) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "SELL_ORDER",
-  //           payload: { message: "Insufficient stock to sell" },
-  //         });
-  //         return;
-  //       }
+      //@ts-ignore
+      const userStock = this.STOCK_BALANCES[userId][stockSymbol][type];
+      if (userStock.quantity < quantity) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "SELL_ORDER",
+          payload: { message: "Insufficient stock to sell" },
+        });
+        return;
+      }
 
-  //       // Lock stock for the sell order
-  //       userStock.quantity -= quantity;
-  //       userStock.locked += quantity;
+      // Lock stock for the sell order
+      userStock.quantity -= quantity;
+      userStock.locked += quantity;
 
-  //       if (!this.ORDERBOOK[stockSymbol]) {
-  //         RedisManager.getInstance().sendToApi(clientId, {
-  //           type: "SELL_ORDER",
-  //           payload: { message: `Market for ${stockSymbol} does not exist` },
-  //         });
-  //         return;
-  //       }
+      if (!this.ORDERBOOK[stockSymbol]) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "SELL_ORDER",
+          payload: { message: `Market for ${stockSymbol} does not exist` },
+        });
+        return;
+      }
 
-  //       const capPrice = 1000; // This should be configurable
-  //       const newPrice = capPrice - price;
-  //       const buySide =
-  //         type === "yes"
-  //           ? this.ORDERBOOK[stockSymbol].no
-  //           : this.ORDERBOOK[stockSymbol].yes;
+      const capPrice = 1000; // This should be configurable
+      const newPrice = capPrice - price;
+      const buySide =
+        type === "yes"
+          ? this.ORDERBOOK[stockSymbol].no
+          : this.ORDERBOOK[stockSymbol].yes;
 
-  //       let remainingQuantity = quantity;
+      let remainingQuantity = quantity;
 
-  //       if (buySide[newPrice] && buySide[newPrice].orders) {
-  //         const pseudoOrders = Object.keys(buySide[newPrice].orders).filter(
-  //           (orderId) => orderId.startsWith("pseudo")
-  //         );
+      if (buySide[newPrice] && buySide[newPrice].orders) {
+        const pseudoOrders = Object.keys(buySide[newPrice].orders).filter(
+          (orderId) => orderId.startsWith("pseudo")
+        );
 
-  //         for (const pseudoOrderId of pseudoOrders) {
-  //           if (remainingQuantity <= 0) break;
+        for (const pseudoOrderId of pseudoOrders) {
+          if (remainingQuantity <= 0) break;
 
-  //           const pseudoUserId = pseudoOrderId.split("pseudo")[1];
-  //           const pseudoQuantity = buySide[newPrice].orders[pseudoOrderId];
-  //           const matchedQuantity = Math.min(remainingQuantity, pseudoQuantity);
+          const pseudoUserId = pseudoOrderId.split("pseudo")[1];
+          const pseudoQuantity = buySide[newPrice].orders[pseudoOrderId];
+          const matchedQuantity = Math.min(remainingQuantity, pseudoQuantity);
 
-  //           // Update seller's balance
-  //           this.INR_BALANCES[userId].balance += matchedQuantity * price;
+          // Update seller's balance
+          this.INR_BALANCES[userId].balance += matchedQuantity * price;
 
-  //           // Update pseudo buyer's stock balance
-  //           if (!this.STOCK_BALANCES[pseudoUserId]) {
-  //             this.STOCK_BALANCES[pseudoUserId] = {};
-  //           }
-  //           if (!this.STOCK_BALANCES[pseudoUserId][stockSymbol]) {
-  //             this.STOCK_BALANCES[pseudoUserId][stockSymbol] = {
-  //               yes: { quantity: 0, locked: 0 },
-  //               no: { quantity: 0, locked: 0 },
-  //             };
-  //           }
-  //           this.STOCK_BALANCES[pseudoUserId][stockSymbol][type].quantity +=
-  //             matchedQuantity;
+          // Update pseudo buyer's stock balance
+          if (!this.STOCK_BALANCES[pseudoUserId]) {
+            this.STOCK_BALANCES[pseudoUserId] = {};
+          }
+          if (!this.STOCK_BALANCES[pseudoUserId][stockSymbol]) {
+            this.STOCK_BALANCES[pseudoUserId][stockSymbol] = {
+              yes: { quantity: 0, locked: 0 },
+              no: { quantity: 0, locked: 0 },
+            };
+          }
+          //@ts-ignore
+          this.STOCK_BALANCES[pseudoUserId][stockSymbol][type].quantity +=
+            matchedQuantity;
 
-  //           // Release pseudo buyer's locked funds
-  //           this.INR_BALANCES[pseudoUserId].locked -= matchedQuantity * newPrice;
+          // Release pseudo buyer's locked funds
+          this.INR_BALANCES[pseudoUserId].locked -= matchedQuantity * newPrice;
 
-  //           // Update order book
-  //           buySide[newPrice].orders[pseudoOrderId] -= matchedQuantity;
-  //           buySide[newPrice].total -= matchedQuantity;
-  //           if (buySide[newPrice].orders[pseudoOrderId] <= 0) {
-  //             delete buySide[newPrice].orders[pseudoOrderId];
-  //           }
+          // Update order book
+          buySide[newPrice].orders[pseudoOrderId] -= matchedQuantity;
+          buySide[newPrice].total -= matchedQuantity;
+          if (buySide[newPrice].orders[pseudoOrderId] <= 0) {
+            delete buySide[newPrice].orders[pseudoOrderId];
+          }
 
-  //           remainingQuantity -= matchedQuantity;
-  //         }
+          remainingQuantity -= matchedQuantity;
+        }
 
-  //         // Remove the price level if no orders remain
-  //         if (buySide[newPrice].total <= 0) {
-  //           delete buySide[newPrice];
-  //         }
-  //       }
+        // Remove the price level if no orders remain
+        if (buySide[newPrice].total <= 0) {
+          delete buySide[newPrice];
+        }
+      }
 
-  //       // Place a new sell order for the remaining quantity
-  //       if (remainingQuantity > 0) {
-  //         const sellSide =
-  //           type === "yes"
-  //             ? this.ORDERBOOK[stockSymbol].yes
-  //             : this.ORDERBOOK[stockSymbol].no;
-  //         if (!sellSide[price]) {
-  //           sellSide[price] = { total: 0, orders: {} };
-  //         }
-  //         sellSide[price].orders[userId] = remainingQuantity;
-  //         sellSide[price].total += remainingQuantity;
-  //       }
+      // Place a new sell order for the remaining quantity
+      if (remainingQuantity > 0) {
+        const sellSide =
+          type === "yes"
+            ? this.ORDERBOOK[stockSymbol].yes
+            : this.ORDERBOOK[stockSymbol].no;
+        if (!sellSide[price]) {
+          sellSide[price] = { total: 0, orders: {} };
+        }
+        sellSide[price].orders[userId] = remainingQuantity;
+        sellSide[price].total += remainingQuantity;
+      }
 
-  //       // Sort the order book
-  //       this.sortOrderBook(stockSymbol, "yes");
-  //       this.sortOrderBook(stockSymbol, "no");
+      // Sort the order book
+      this.sortOrderBook(stockSymbol, "yes");
+      this.sortOrderBook(stockSymbol, "no");
 
-  //       RedisManager.getInstance().sendToApi(clientId, {
-  //         type: "SELL_ORDER",
-  //         payload: {
-  //           message:
-  //             remainingQuantity === 0
-  //               ? `Sell order fully matched for ${quantity} ${type} at price ${price}`
-  //               : `Sell order placed for ${remainingQuantity} ${type} at price ${price}`,
-  //           ORDERBOOK: this.ORDERBOOK,
-  //           STOCK_BALANCES: this.STOCK_BALANCES,
-  //           INR_BALANCES: this.INR_BALANCES,
-  //         },
-  //       });
-  //     } catch (err) {
-  //       console.error(err);
-  //       RedisManager.getInstance().sendToApi(clientId, {
-  //         type: "SELL_ORDER",
-  //         payload: { message: "Failed to process sell order" },
-  //       });
-  //     }
-  //   }
+      RedisManager.getInstance().sendToApi(clientId, {
+        type: "SELL_ORDER",
+        payload: {
+          message:
+            remainingQuantity === 0
+              ? `Sell order fully matched for ${quantity} ${type} at price ${price}`
+              : `Sell order placed for ${remainingQuantity} ${type} at price ${price}`,
+          ORDERBOOK: this.ORDERBOOK,
+          STOCK_BALANCES: this.STOCK_BALANCES,
+          INR_BALANCES: this.INR_BALANCES,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      RedisManager.getInstance().sendToApi(clientId, {
+        type: "SELL_ORDER",
+        payload: { message: "Failed to process sell order" },
+      });
+    }
+  }
 }
