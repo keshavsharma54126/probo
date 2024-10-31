@@ -1,1 +1,1 @@
-{"ORDERBOOK":{"eth":{"yes":{},"no":{}}},"INR_BALANCES":{"user1":{"balance":10000,"locked":0},"user2":{"balance":0,"locked":0},"user11":{"balance":0,"locked":0}},"STOCK_BALANCES":{"user1":{}}}
+{"ORDERBOOK":{"btc":{"yes":{},"no":{"400":{"total":0,"orders":{"pseudouser2":0}}}}},"INR_BALANCES":{"user1":{"balance":1004000,"locked":-2000},"user2":{"balance":976000,"locked":2000}},"STOCK_BALANCES":{"user1":{"btc":{"yes":{"quantity":0,"locked":0},"no":{"quantity":0,"locked":0}}},"user2":{"btc":{"yes":{"quantity":20,"locked":0},"no":{"quantity":20,"locked":0}}}}}

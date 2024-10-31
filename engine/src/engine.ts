@@ -114,6 +114,7 @@ export class Engine {
   private ORDERBOOK: ORDERBOOK = {};
   private INR_BALANCES: INR_BALANCES = {};
   private STOCK_BALANCES: STOCK_BALANCES = {};
+  private capprice: number = 1000;
 
   constructor() {
     let snapshot = null;
@@ -186,12 +187,12 @@ export class Engine {
       case fromapi.GET_STOCK_ORDERBOOK:
         this.getStockOrderbook(data, clientId);
         break;
-      //   case fromapi.BUY_ORDER:
-      //     this.buyOrder(data, clientId);
-      //     break;
-      //   case fromapi.SELL_ORDER:
-      //     this.sellOrder(data, clientId);
-      //     break;
+      case fromapi.BUY_ORDER:
+        this.buyOrder(data, clientId);
+        break;
+      case fromapi.SELL_ORDER:
+        this.sellOrder(data, clientId);
+        break;
     }
   }
 
@@ -380,16 +381,71 @@ export class Engine {
   }
 
   // Add these methods to the Engine class
+  private matchOrders(
+    userId: string,
+    stockSymbol: string,
+    quantity: number,
+    price: number,
+    type: string,
+    capPrice: number
+  ) {
+    console.log(
+      `Matching orders for: ${userId}, ${stockSymbol}, ${quantity}, ${price}, ${type}, CapPrice: ${capPrice}`
+    );
+
+    if (!this.ORDERBOOK[stockSymbol]) {
+      console.error(`Stock symbol ${stockSymbol} not found in ORDERBOOK`);
+      return quantity;
+    }
+
+    let remainingQuantity = quantity;
+
+    // Define primary and secondary matching sides
+    const primaryMatchSide =
+      type === "yes"
+        ? this.ORDERBOOK[stockSymbol].yes
+        : this.ORDERBOOK[stockSymbol].no;
+    const secondaryMatchSide =
+      type === "yes"
+        ? this.ORDERBOOK[stockSymbol].no
+        : this.ORDERBOOK[stockSymbol].yes;
+
+    // Match with primary side (real orders)
+    remainingQuantity = this.matchWithSide(
+      primaryMatchSide,
+      remainingQuantity,
+      price,
+      userId,
+      stockSymbol,
+      type,
+      false
+    );
+
+    // Match with secondary side (pseudo orders)
+    if (remainingQuantity > 0) {
+      remainingQuantity = this.matchWithSide(
+        secondaryMatchSide,
+        remainingQuantity,
+        capPrice - price,
+        userId,
+        stockSymbol,
+        type,
+        true
+      );
+    }
+
+    return remainingQuantity;
+  }
 
   private matchWithSide(
-    side: OrderSide,
+    side: any,
     remainingQuantity: number,
     price: number,
     userId: string,
     stockSymbol: string,
     type: string,
     isPseudo: boolean
-  ): number {
+  ) {
     for (const orderPrice in side) {
       if (
         (isPseudo && parseInt(orderPrice) === price) ||
@@ -407,7 +463,7 @@ export class Engine {
         if (!isPseudo) {
           if (!this.INR_BALANCES[userId]) {
             console.error(`User ${userId} not found in INR_BALANCES`);
-            return remainingQuantity;
+            return remainingQuantity; // Return without making changes if user doesn't exist
           }
           this.INR_BALANCES[userId].locked -=
             quantityToMatch * parseInt(orderPrice);
@@ -432,7 +488,7 @@ export class Engine {
               const realSellerId = sellerId.replace("pseudo", "");
               if (!this.INR_BALANCES[realSellerId]) {
                 console.error(`User ${realSellerId} not found in INR_BALANCES`);
-                continue;
+                continue; // Skip this seller if they don't exist
               }
               this.INR_BALANCES[realSellerId].locked -=
                 matchedQuantity * parseInt(orderPrice);
@@ -443,45 +499,51 @@ export class Engine {
                   yes: { quantity: 0, locked: 0 },
                   no: { quantity: 0, locked: 0 },
                 };
+              //@ts-ignore
               this.STOCK_BALANCES[realSellerId][stockSymbol][
                 type === "yes" ? "no" : "yes"
               ].quantity += matchedQuantity;
             } else {
               if (!this.INR_BALANCES[sellerId]) {
                 console.error(`User ${sellerId} not found in INR_BALANCES`);
-                continue;
+                continue; // Skip this seller if they don't exist
               }
               this.INR_BALANCES[sellerId].balance +=
                 matchedQuantity * parseInt(orderPrice);
-              if (!this.STOCK_BALANCES[sellerId]?.[stockSymbol]) {
+              if (
+                !this.STOCK_BALANCES[sellerId] ||
+                !this.STOCK_BALANCES[sellerId][stockSymbol]
+              ) {
                 console.error(
                   `Stock balance not found for user ${sellerId} and symbol ${stockSymbol}`
                 );
-                continue;
+                continue; // Skip this seller if they don't have the stock balance
               }
               //@ts-ignore
               this.STOCK_BALANCES[sellerId][stockSymbol][type].locked -=
                 matchedQuantity;
             }
 
-            // Update order quantities
+            quantityToMatch -= matchedQuantity;
             availableOrders.orders[sellerId] -= matchedQuantity;
             availableOrders.total -= matchedQuantity;
-            quantityToMatch -= matchedQuantity;
 
             if (availableOrders.orders[sellerId] <= 0) {
               delete availableOrders.orders[sellerId];
             }
 
-            if (quantityToMatch <= 0) break;
+            if (quantityToMatch === 0) break;
           }
         }
 
         if (availableOrders.total <= 0) {
           delete side[orderPrice];
         }
+
+        if (remainingQuantity === 0) break;
       }
     }
+
     return remainingQuantity;
   }
 
@@ -531,44 +593,53 @@ export class Engine {
       this.INR_BALANCES[userId].balance -= totalCost;
       this.INR_BALANCES[userId].locked += totalCost;
 
-      let remainingQuantity = quantity;
-
       // Try to match with existing orders
-      remainingQuantity = this.matchWithSide(
+      const remainingQuantity = this.matchOrders(
         //@ts-ignore
-        this.ORDERBOOK[stockSymbol][type],
-        remainingQuantity,
-        price,
         userId,
         stockSymbol,
+        quantity,
+        price,
         type,
-        false
+        this.capprice
       );
 
       // If there's remaining quantity, place a new order
-      if (remainingQuantity > 0) {
-        const buySide =
-          type === "yes"
-            ? this.ORDERBOOK[stockSymbol].yes
-            : this.ORDERBOOK[stockSymbol].no;
-
-        if (!buySide[price]) {
-          buySide[price] = { total: 0, orders: {} };
-        }
-        buySide[price].orders[userId] = remainingQuantity;
-        buySide[price].total += remainingQuantity;
+      if (remainingQuantity === 0) {
+        RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: {
+            message: "Buy order fully matched",
+            ORDERBOOK: this.ORDERBOOK,
+            STOCK_BALANCES: this.STOCK_BALANCES,
+            INR_BALANCES: this.INR_BALANCES,
+          },
+        });
       }
+      const sellSide =
+        type === "yes"
+          ? this.ORDERBOOK[stockSymbol].no
+          : this.ORDERBOOK[stockSymbol].yes;
 
-      // Sort the order book
+      // If no match is found, create a pseudo sell order
+      let newprice = this.capprice - price;
+      const pseudoUserId = `pseudo${userId}`;
+      if (!sellSide[newprice]) {
+        sellSide[newprice] = { total: 0, orders: {} };
+      }
+      sellSide[newprice].orders[pseudoUserId] =
+        (sellSide[newprice].orders[pseudoUserId] || 0) + remainingQuantity;
+      sellSide[newprice].total += remainingQuantity;
+      //sort the order book after adding the new order
+      let newOrderSide = type === "yes" ? "no" : "yes";
       this.sortOrderBook(stockSymbol, "yes");
       this.sortOrderBook(stockSymbol, "no");
 
       RedisManager.getInstance().sendToApi(clientId, {
         type: "BUY_ORDER",
         payload: {
-          message: `Buy order placed for ${quantity} ${type} at price ${price}`,
+          message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
           ORDERBOOK: this.ORDERBOOK,
-          STOCK_BALANCES: this.STOCK_BALANCES,
           INR_BALANCES: this.INR_BALANCES,
         },
       });
@@ -633,16 +704,14 @@ export class Engine {
         return;
       }
 
-      const capPrice = 1000; // This should be configurable
-      const newPrice = capPrice - price;
+      const newPrice = this.capprice - price;
       const buySide =
         type === "yes"
           ? this.ORDERBOOK[stockSymbol].no
           : this.ORDERBOOK[stockSymbol].yes;
 
-      let remainingQuantity = quantity;
-
       if (buySide[newPrice] && buySide[newPrice].orders) {
+        let remainingQuantity = quantity;
         const pseudoOrders = Object.keys(buySide[newPrice].orders).filter(
           (orderId) => orderId.startsWith("pseudo")
         );
@@ -688,20 +757,31 @@ export class Engine {
         if (buySide[newPrice].total <= 0) {
           delete buySide[newPrice];
         }
-      }
-
-      // Place a new sell order for the remaining quantity
-      if (remainingQuantity > 0) {
-        const sellSide =
-          type === "yes"
-            ? this.ORDERBOOK[stockSymbol].yes
-            : this.ORDERBOOK[stockSymbol].no;
-        if (!sellSide[price]) {
-          sellSide[price] = { total: 0, orders: {} };
+        // Place a new sell order for the remaining quantity
+        if (remainingQuantity > 0) {
+          const sellSide =
+            type === "yes"
+              ? this.ORDERBOOK[stockSymbol].yes
+              : this.ORDERBOOK[stockSymbol].no;
+          if (!sellSide[price]) {
+            sellSide[price] = { total: 0, orders: {} };
+          }
+          sellSide[price].orders[userId] = remainingQuantity;
+          sellSide[price].total += remainingQuantity;
         }
-        sellSide[price].orders[userId] = remainingQuantity;
-        sellSide[price].total += remainingQuantity;
+        quantity = remainingQuantity;
       }
+      // Place a new sell order for the remaining quantity
+      const sellSide =
+        type === "yes"
+          ? this.ORDERBOOK[stockSymbol].yes
+          : this.ORDERBOOK[stockSymbol].no;
+      if (!sellSide[price]) {
+        sellSide[price] = { total: 0, orders: {} };
+      }
+      sellSide[price].orders[userId] =
+        (sellSide[price].orders[userId] || 0) + quantity;
+      sellSide[price].total += quantity;
 
       // Sort the order book
       this.sortOrderBook(stockSymbol, "yes");
@@ -710,10 +790,7 @@ export class Engine {
       RedisManager.getInstance().sendToApi(clientId, {
         type: "SELL_ORDER",
         payload: {
-          message:
-            remainingQuantity === 0
-              ? `Sell order fully matched for ${quantity} ${type} at price ${price}`
-              : `Sell order placed for ${remainingQuantity} ${type} at price ${price}`,
+          message: `Sell order fully matched for ${quantity} ${type} at price ${price}`,
           ORDERBOOK: this.ORDERBOOK,
           STOCK_BALANCES: this.STOCK_BALANCES,
           INR_BALANCES: this.INR_BALANCES,
