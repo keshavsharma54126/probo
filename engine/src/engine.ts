@@ -569,11 +569,19 @@ export class Engine {
           type: "BUY_ORDER",
           payload: { message: "User not found" },
         });
+        RedisManager.getInstance().publishMessage("buy_order", {
+          type: "BUY_ORDER",
+          payload: { message: "User not found" },
+        });
         return;
       }
 
       if (!this.ORDERBOOK[stockSymbol]) {
         RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: { message: `Market for ${stockSymbol} does not exist` },
+        });
+        RedisManager.getInstance().publishMessage("buy_order", {
           type: "BUY_ORDER",
           payload: { message: `Market for ${stockSymbol} does not exist` },
         });
@@ -583,6 +591,10 @@ export class Engine {
       const totalCost = quantity * price;
       if (this.INR_BALANCES[userId].balance < totalCost) {
         RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: { message: "Insufficient balance" },
+        });
+        RedisManager.getInstance().publishMessage("buy_order", {
           type: "BUY_ORDER",
           payload: { message: "Insufficient balance" },
         });
@@ -607,6 +619,15 @@ export class Engine {
       // If there's remaining quantity, place a new order
       if (remainingQuantity === 0) {
         RedisManager.getInstance().sendToApi(clientId, {
+          type: "BUY_ORDER",
+          payload: {
+            message: "Buy order fully matched",
+            ORDERBOOK: this.ORDERBOOK,
+            STOCK_BALANCES: this.STOCK_BALANCES,
+            INR_BALANCES: this.INR_BALANCES,
+          },
+        });
+        RedisManager.getInstance().publishMessage("buy_order", {
           type: "BUY_ORDER",
           payload: {
             message: "Buy order fully matched",
@@ -640,12 +661,26 @@ export class Engine {
         payload: {
           message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
           ORDERBOOK: this.ORDERBOOK,
+          STOCK_BALANCES: this.STOCK_BALANCES,
+          INR_BALANCES: this.INR_BALANCES,
+        },
+      });
+      RedisManager.getInstance().publishMessage("buy_order", {
+        type: "BUY_ORDER",
+        payload: {
+          message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
+          ORDERBOOK: this.ORDERBOOK,
+          STOCK_BALANCES: this.STOCK_BALANCES,
           INR_BALANCES: this.INR_BALANCES,
         },
       });
     } catch (err) {
       console.error(err);
       RedisManager.getInstance().sendToApi(clientId, {
+        type: "BUY_ORDER",
+        payload: { message: "Failed to process buy order" },
+      });
+      RedisManager.getInstance().publishMessage("buy_order", {
         type: "BUY_ORDER",
         payload: { message: "Failed to process buy order" },
       });
@@ -679,6 +714,10 @@ export class Engine {
           type: "SELL_ORDER",
           payload: { message: "User does not have stock to sell" },
         });
+        RedisManager.getInstance().publishMessage("sell_order", {
+          type: "SELL_ORDER",
+          payload: { message: "User does not have stock to sell" },
+        });
         return;
       }
 
@@ -686,6 +725,10 @@ export class Engine {
       const userStock = this.STOCK_BALANCES[userId][stockSymbol][type];
       if (userStock.quantity < quantity) {
         RedisManager.getInstance().sendToApi(clientId, {
+          type: "SELL_ORDER",
+          payload: { message: "Insufficient stock to sell" },
+        });
+        RedisManager.getInstance().publishMessage("sell_order", {
           type: "SELL_ORDER",
           payload: { message: "Insufficient stock to sell" },
         });
@@ -698,6 +741,10 @@ export class Engine {
 
       if (!this.ORDERBOOK[stockSymbol]) {
         RedisManager.getInstance().sendToApi(clientId, {
+          type: "SELL_ORDER",
+          payload: { message: `Market for ${stockSymbol} does not exist` },
+        });
+        RedisManager.getInstance().publishMessage("sell_order", {
           type: "SELL_ORDER",
           payload: { message: `Market for ${stockSymbol} does not exist` },
         });
@@ -796,9 +843,22 @@ export class Engine {
           INR_BALANCES: this.INR_BALANCES,
         },
       });
+      RedisManager.getInstance().publishMessage("sell_order", {
+        type: "SELL_ORDER",
+        payload: {
+          message: `Sell order fully matched for ${quantity} ${type} at price ${price}`,
+          ORDERBOOK: this.ORDERBOOK,
+          STOCK_BALANCES: this.STOCK_BALANCES,
+          INR_BALANCES: this.INR_BALANCES,
+        },
+      });
     } catch (err) {
       console.error(err);
       RedisManager.getInstance().sendToApi(clientId, {
+        type: "SELL_ORDER",
+        payload: { message: "Failed to process sell order" },
+      });
+      RedisManager.getInstance().publishMessage("sell_order", {
         type: "SELL_ORDER",
         payload: { message: "Failed to process sell order" },
       });
