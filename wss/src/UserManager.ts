@@ -7,7 +7,7 @@ export class UserManager {
   private users: Map<string, User> = new Map();
 
   private constructior() {}
-  private static getInstance() {
+  public static getInstance() {
     if (!this.instance) {
       this.instance = new UserManager();
     }
@@ -18,7 +18,7 @@ export class UserManager {
     const userId = this.getRandomId();
     const user = new User(ws, userId);
     this.users.set(userId, user);
-    this.registerOnClose(ws, id);
+    this.registerOnClose(ws, userId);
     return user;
   }
   public registerOnClose(ws: WebSocket, userId: string) {
