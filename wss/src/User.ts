@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import { SubscriptionManager } from "./SubscriptionManager";
+import { IncomingMessage, SUBSCRIBE, UNSUBSCRIBE } from "./types/in";
 
 export class User {
   private id: string;
@@ -27,13 +28,13 @@ export class User {
 
   private addListener() {
     this.ws.on("message", (message: string) => {
-      const parsedMessage: any = JSON.parse(message);
-      if (parsedMessage.method === "subscribe") {
+      const parsedMessage: IncomingMessage = JSON.parse(message);
+      if (parsedMessage.method === SUBSCRIBE) {
         parsedMessage.params.forEach((s: any) =>
           SubscriptionManager.getInstance().subscribe(this.id, s)
         );
       }
-      if (parsedMessage.method === "unsubscribe") {
+      if (parsedMessage.method === UNSUBSCRIBE) {
         parsedMessage.params.forEach((s: any) =>
           SubscriptionManager.getInstance().unsubscribe(this.id, s)
         );
