@@ -220,6 +220,7 @@ export class Engine {
           STOCK_BALANCES: this.STOCK_BALANCES,
         },
       });
+      RedisManager.getInstance().publishMessage("reset", {});
     }
   }
 
@@ -238,6 +239,12 @@ export class Engine {
       payload: {
         message: `User ${userId} created`,
         INR_BALANCES: this.INR_BALANCES,
+      },
+    });
+    RedisManager.getInstance().publishMessage("user_inr_balance", {
+      type: "CREATE_USER",
+      payload: {
+        INR_BALANCES: this.INR_BALANCES[userId],
       },
     });
   }
@@ -292,11 +299,22 @@ export class Engine {
         type: "GET_USER_INR_BALANCE",
         payload: { message: "user not found" },
       });
+      RedisManager.getInstance().publishMessage("user_inr_balance", {
+        type: "GET_USER_INR_BALANCE",
+        payload: { message: "user not found" },
+      });
 
       return;
     }
 
     RedisManager.getInstance().sendToApi(clientId, {
+      type: "GET_USER_INR_BALANCE",
+      payload: {
+        userId: userId,
+        balance: this.INR_BALANCES[userId],
+      },
+    });
+    RedisManager.getInstance().publishMessage("user_inr_balance", {
       type: "GET_USER_INR_BALANCE",
       payload: {
         userId: userId,
@@ -323,6 +341,13 @@ export class Engine {
       type: "ONRAMP_INR",
       payload: { message: `Onramped ${userId} with amount ${amount}` },
     });
+    RedisManager.getInstance().publishMessage("user_inr_balance", {
+      type: "ONRAMP_INR",
+      payload: {
+        userId: userId,
+        balance: this.INR_BALANCES[userId],
+      },
+    });
   }
 
   getUserStockBalance({ userId }: { userId: string }, clientId: string) {
@@ -336,6 +361,10 @@ export class Engine {
     }
 
     RedisManager.getInstance().sendToApi(clientId, {
+      type: "GET_USER_STOCK_BALANCE",
+      payload: this.STOCK_BALANCES[userId],
+    });
+    RedisManager.getInstance().publishMessage("user_stock_balance", {
       type: "GET_USER_STOCK_BALANCE",
       payload: this.STOCK_BALANCES[userId],
     });
@@ -569,10 +598,7 @@ export class Engine {
           type: "BUY_ORDER",
           payload: { message: "User not found" },
         });
-        RedisManager.getInstance().publishMessage("buy_order", {
-          type: "BUY_ORDER",
-          payload: { message: "User not found" },
-        });
+
         return;
       }
 
@@ -594,10 +620,7 @@ export class Engine {
           type: "BUY_ORDER",
           payload: { message: "Insufficient balance" },
         });
-        RedisManager.getInstance().publishMessage("buy_order", {
-          type: "BUY_ORDER",
-          payload: { message: "Insufficient balance" },
-        });
+
         return;
       }
 
@@ -627,13 +650,24 @@ export class Engine {
             INR_BALANCES: this.INR_BALANCES,
           },
         });
-        RedisManager.getInstance().publishMessage("buy_order", {
+        RedisManager.getInstance().publishMessage("user_inr_balance", {
+          type: "CREATE_USER",
+          payload: {
+            INR_BALANCES: this.INR_BALANCES[userId],
+          },
+        });
+        RedisManager.getInstance().publishMessage("stock_orderbook", {
+          type: "GET_STOCK_ORDERBOOK",
+          payload: {
+            symbol: stockSymbol,
+            orderbook: this.ORDERBOOK[stockSymbol],
+          },
+        });
+        RedisManager.getInstance().publishMessage("stock_balance", {
           type: "BUY_ORDER",
           payload: {
-            message: "Buy order fully matched",
-            ORDERBOOK: this.ORDERBOOK,
-            STOCK_BALANCES: this.STOCK_BALANCES,
-            INR_BALANCES: this.INR_BALANCES,
+            userId: userId,
+            STOCK_BALANCES: this.STOCK_BALANCES[userId],
           },
         });
       }
@@ -665,13 +699,24 @@ export class Engine {
           INR_BALANCES: this.INR_BALANCES,
         },
       });
-      RedisManager.getInstance().publishMessage("buy_order", {
+      RedisManager.getInstance().publishMessage("user_inr_balance", {
+        type: "CREATE_USER",
+        payload: {
+          INR_BALANCES: this.INR_BALANCES[userId],
+        },
+      });
+      RedisManager.getInstance().publishMessage("stock_orderbook", {
+        type: "GET_STOCK_ORDERBOOK",
+        payload: {
+          symbol: stockSymbol,
+          orderbook: this.ORDERBOOK[stockSymbol],
+        },
+      });
+      RedisManager.getInstance().publishMessage("stock_balance", {
         type: "BUY_ORDER",
         payload: {
-          message: `Buy order placed for ${quantity} ${type} at price ${price}, waiting for matching no order`,
-          ORDERBOOK: this.ORDERBOOK,
-          STOCK_BALANCES: this.STOCK_BALANCES,
-          INR_BALANCES: this.INR_BALANCES,
+          userId: userId,
+          STOCK_BALANCES: this.STOCK_BALANCES[userId],
         },
       });
     } catch (err) {
@@ -714,10 +759,7 @@ export class Engine {
           type: "SELL_ORDER",
           payload: { message: "User does not have stock to sell" },
         });
-        RedisManager.getInstance().publishMessage("sell_order", {
-          type: "SELL_ORDER",
-          payload: { message: "User does not have stock to sell" },
-        });
+
         return;
       }
 
@@ -728,10 +770,7 @@ export class Engine {
           type: "SELL_ORDER",
           payload: { message: "Insufficient stock to sell" },
         });
-        RedisManager.getInstance().publishMessage("sell_order", {
-          type: "SELL_ORDER",
-          payload: { message: "Insufficient stock to sell" },
-        });
+
         return;
       }
 
@@ -741,10 +780,6 @@ export class Engine {
 
       if (!this.ORDERBOOK[stockSymbol]) {
         RedisManager.getInstance().sendToApi(clientId, {
-          type: "SELL_ORDER",
-          payload: { message: `Market for ${stockSymbol} does not exist` },
-        });
-        RedisManager.getInstance().publishMessage("sell_order", {
           type: "SELL_ORDER",
           payload: { message: `Market for ${stockSymbol} does not exist` },
         });
@@ -843,13 +878,24 @@ export class Engine {
           INR_BALANCES: this.INR_BALANCES,
         },
       });
-      RedisManager.getInstance().publishMessage("sell_order", {
-        type: "SELL_ORDER",
+      RedisManager.getInstance().publishMessage("user_inr_balance", {
+        type: "CREATE_USER",
         payload: {
-          message: `Sell order fully matched for ${quantity} ${type} at price ${price}`,
-          ORDERBOOK: this.ORDERBOOK,
-          STOCK_BALANCES: this.STOCK_BALANCES,
-          INR_BALANCES: this.INR_BALANCES,
+          INR_BALANCES: this.INR_BALANCES[userId],
+        },
+      });
+      RedisManager.getInstance().publishMessage("stock_orderbook", {
+        type: "GET_STOCK_ORDERBOOK",
+        payload: {
+          symbol: stockSymbol,
+          orderbook: this.ORDERBOOK[stockSymbol],
+        },
+      });
+      RedisManager.getInstance().publishMessage("stock_balance", {
+        type: "BUY_ORDER",
+        payload: {
+          userId: userId,
+          STOCK_BALANCES: this.STOCK_BALANCES[userId],
         },
       });
     } catch (err) {
