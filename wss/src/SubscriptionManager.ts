@@ -1,5 +1,7 @@
-import { UserManager } from "./UserManager";
+import { UserManager } from "./UserManager.js";
+//@ts-ignoreyyy
 import { WebSocket } from "ws";
+//@ts-ignore
 import { RedisClientType, createClient } from "redis";
 export class SubscriptionManager {
   private static instance: SubscriptionManager;
@@ -10,6 +12,9 @@ export class SubscriptionManager {
   private constructor() {
     this.redisClient = createClient();
     this.redisClient.connect();
+    this.redisClient.on("message", (message:string, channel:string) =>
+      this.redisCallbackHandler(message, channel)
+    );
   }
 
   public static getInstance() {
@@ -36,8 +41,10 @@ export class SubscriptionManager {
     }
   }
 
-  private redisCallbackHandler(message: string, channel: string) {
+  private redisCallbackHandler=(message: string, channel: string) =>{
+    
     const paresedMessage = JSON.parse(message);
+    
     this.reverseSubscriptions
       .get(channel)
       ?.forEach((s) =>

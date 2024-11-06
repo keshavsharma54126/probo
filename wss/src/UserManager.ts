@@ -1,12 +1,13 @@
+//@ts-ignore
 import { WebSocket } from "ws";
-import { User } from "./User";
-import { SubscriptionManager } from "./SubscriptionManager";
+import { User } from "./User.js";
+import { SubscriptionManager } from "./SubscriptionManager.js";
 
 export class UserManager {
   private static instance: UserManager;
   private users: Map<string, User> = new Map();
 
-  private constructior() {}
+  private constructor() {}
   public static getInstance() {
     if (!this.instance) {
       this.instance = new UserManager();

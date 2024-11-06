@@ -210,6 +210,14 @@ export class Engine {
           STOCK_BALANCES: this.STOCK_BALANCES,
         },
       });
+      RedisManager.getInstance().publishMessage("reset", {
+        payload: {
+          ORDERBOOK: {},
+          INR_BALANCES: {},
+          STOCK_BALANCES: {},
+        },
+      });
+
     } catch (e) {
       console.log("could not reset the variables in the engine", e);
       RedisManager.getInstance().sendToApi(clientId, {
@@ -220,7 +228,13 @@ export class Engine {
           STOCK_BALANCES: this.STOCK_BALANCES,
         },
       });
-      RedisManager.getInstance().publishMessage("reset", {});
+      RedisManager.getInstance().publishMessage("reset", {
+        payload: {
+          ORDERBOOK: {},
+          INR_BALANCES: {},
+          STOCK_BALANCES: {},
+        },
+      });
     }
   }
 
